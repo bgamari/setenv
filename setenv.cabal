@@ -8,7 +8,7 @@ maintainer:       Simon Hengel <sol@typeful.net>
 category:         System
 synopsis:         A cross-platform library for setting environment variables
 description:      A cross-platform library for setting environment variables
-build-type:       Simple
+build-type:       Configure
 cabal-version:    >= 1.8
 
 source-repository head
@@ -26,8 +26,13 @@ library
       System.Environment.ExecutablePath
   build-depends:
       base == 4.*
-  if !os(windows)
-    build-depends: unix
+
+  include-dirs:
+      include
+  includes:
+      HsBase.h
+  c-sources:
+      cbits/SetEnv.c
 
 test-suite spec
   type:
