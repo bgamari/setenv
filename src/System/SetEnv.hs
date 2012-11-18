@@ -4,13 +4,19 @@ module System.SetEnv (
 , unsetEnv
 ) where
 
+import Foreign.C
+import GHC.IO.Exception (IOErrorType (InvalidArgument))
+import Control.Exception (throwIO)
+import System.IO.Error (mkIOError)
+
 #ifdef mingw32_HOST_OS
 import GHC.Windows
 import Foreign.Safe
-import Foreign.C
 import Control.Monad
 #else
 import qualified System.Posix.Env as Posix
+import GHC.IO.Encoding (getFileSystemEncoding)
+import qualified GHC.Foreign as GHC
 #endif
 
 #ifdef mingw32_HOST_OS
@@ -53,26 +59,13 @@ eRROR_ENVVAR_NOT_FOUND = 203
 -- Throws `Control.Exception.IOException` if @name@ is the empty string or
 -- contains an equals sign.
 setEnv :: String -> String -> IO ()
-setEnv key value_
-  | null value = unsetEnv key
-  | otherwise  = setEnv_ key value
+setEnv key_ value_
+  | null key       = throwIO (mkIOError InvalidArgument "setEnv" Nothing Nothing)
+  | '=' `elem` key = throwIO (mkIOError InvalidArgument "setEnv" Nothing Nothing)
+  | null value     = unsetEnv key
+  | otherwise      = setEnv_ key value
   where
-    -- NOTE: Anything that follows NUL is ignored on both POSIX and Windows.
-    -- We still strip it manually so that the null check above succeds if a
-    -- value starts with NUL, and `unsetEnv` is called.  This is important for
-    -- two reasons.
-    --
-    --  * On POSIX setting an environment variable to the empty string does not
-    --    remove it.
-    --
-    --  * On Windows setting an environment variable to the empty string
-    --    removes that environment variable.  A subsequent call to
-    --    GetEnvironmentVariable will then return 0, but the calling thread's
-    --    last-error code will not be updated, and hence a call to GetLastError
-    --    may not return ERROR_ENVVAR_NOT_FOUND.  The failed lookup will then
-    --    result in a random error instead of the expected
-    --    `isDoesNotExistError` (this is at least true for Windows XP, SP 3).
-    --    Explicitly calling `unsetEnv` prevents this.
+    key   = takeWhile (/= '\NUL') key_
     value = takeWhile (/= '\NUL') value_
 
 setEnv_ :: String -> String -> IO ()
@@ -84,7 +77,22 @@ setEnv_ key value = withCWString key $ \k -> withCWString value $ \v -> do
 foreign import WINDOWS_CCONV unsafe "windows.h SetEnvironmentVariableW"
   c_SetEnvironmentVariable :: LPTSTR -> LPTSTR -> IO Bool
 #else
-setEnv_ k v = Posix.setEnv k v True
+
+-- NOTE: The 'setenv()' function is not available on all systems, hence we use
+-- 'putenv()'.  This leaks memory, but so do common implementations of
+-- 'setenv()' (AFAIK).
+setEnv_ k v = putEnv (k ++ "=" ++ v)
+
+putEnv :: String -> IO ()
+putEnv keyvalue = do
+  s <- getFileSystemEncoding >>= (`GHC.newCString` keyvalue)
+  -- IMPORTANT: Do not free `s` after calling putenv!
+  --
+  -- According to SUSv2, the string passed to putenv becomes part of the
+  -- enviroment.
+  throwErrnoIfMinus1_ "putenv" (c_putenv s)
+
+foreign import ccall unsafe "putenv" c_putenv :: CString -> IO CInt
 #endif
 
 -- | @unSet name@ removes the specified environment variable from the
