@@ -21,7 +21,9 @@ library
   hs-source-dirs:
       src
   exposed-modules:
-      System.SetEnv
+      System.Environment
+  other-modules:
+      System.Environment.ExecutablePath
   build-depends:
       base == 4.*
   if !os(windows)

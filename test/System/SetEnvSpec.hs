@@ -1,3 +1,4 @@
+{-# LANGUAGE PackageImports #-}
 module System.SetEnvSpec (main, spec) where
 
 import           Test.Hspec
@@ -7,8 +8,7 @@ import           Test.QuickCheck.Property
 import qualified Control.Exception as E
 import           System.IO.Error
 import           GHC.IO.Exception (IOErrorType (InvalidArgument))
-import           System.SetEnv
-import           System.Environment (getEnv)
+import "setenv"  System.Environment
 
 main :: IO ()
 main = hspec spec
